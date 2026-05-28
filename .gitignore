@@ -1,0 +1,12 @@
+# .NET
+InventoryApi/bin/
+InventoryApi/obj/
+InventoryApi/wwwroot/images/
+
+# Angular
+inventory-app/node_modules/
+inventory-app/.angular/
+inventory-app/dist/
+
+# Environment
+appsettings.Development.json

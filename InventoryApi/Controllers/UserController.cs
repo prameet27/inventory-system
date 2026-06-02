@@ -1,9 +1,11 @@
 using InventoryApi.Data;
 using InventoryApi.DTOs;
 using InventoryApi.Models;
+using InventoryApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace InventoryApi.Controllers;
 
@@ -13,10 +15,12 @@ namespace InventoryApi.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly NotificationService _notify; 
 
-    public UsersController(AppDbContext context)
+    public UsersController(AppDbContext context, NotificationService notify)
     {
         _context = context;
+        _notify =  notify;
     }
 
     [HttpGet]
@@ -76,6 +80,14 @@ public class UsersController : ControllerBase
 
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
+
+        await _notify.NotifyAll(
+            $"New User Created: {user.Username}",
+            "success",
+            GetCurrentUsername(),
+            "Added",
+            user.Username
+        );
         return Ok("User created successfully.");
     }
 
@@ -92,6 +104,14 @@ public class UsersController : ControllerBase
         user.IsActive = dto.IsActive;
 
         await _context.SaveChangesAsync();
+
+        await _notify.NotifyAll(
+            $"User Updated: {user.Username}",
+            "info",
+            GetCurrentUsername(),
+            "Updated",
+            user.Username
+        );
         return Ok("User updated successfully.");
     }
 
@@ -102,9 +122,25 @@ public class UsersController : ControllerBase
         var user = await _context.Users.FindAsync(id);
         if (user == null) return NotFound("User not found.");
 
+        // Delete related stock ledgers first
+        var stockLedgers = await _context.StockLedgers
+            .Where(s => s.CreatedByUserId == id)
+            .ToListAsync();
+
+        _context.StockLedgers.RemoveRange(stockLedgers);
+
         _context.Users.Remove(user);
         await _context.SaveChangesAsync();
-        return Ok("User deactivated successfully.");
+
+        await _notify.NotifyAll(
+            $"User Deleted: {user.Username}",
+            "warning",
+            GetCurrentUsername(),
+            "Deleted",
+            user.Username
+        );
+
+        return Ok("User deleted successfully.");
     }
 
     [HttpPut("{id}/change-password")]
@@ -116,5 +152,10 @@ public class UsersController : ControllerBase
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
         await _context.SaveChangesAsync();
         return Ok("Password changed successfully.");
+    }
+
+    private string GetCurrentUsername()
+    {
+        return User.FindFirst(ClaimTypes.Name)?.Value ?? "Unknown";
     }
 }

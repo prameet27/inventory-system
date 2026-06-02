@@ -2,6 +2,7 @@ using System.Security.Claims;
 using InventoryApi.Data;
 using InventoryApi.DTOs;
 using InventoryApi.Models;
+using InventoryApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,10 +15,12 @@ namespace InventoryApi.Controllers;
 public class StockController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly NotificationService _notify;
 
-    public StockController(AppDbContext context)
+    public StockController(AppDbContext context, NotificationService notify)
     {
         _context = context;
+        _notify = notify;
     }
 
     [HttpPost("transaction")]
@@ -54,9 +57,23 @@ public class StockController : ControllerBase
 
         _context.StockLedgers.Add(transaction);
         await _context.SaveChangesAsync();
+
+        var msg = dto.TransactionType == "IN"
+            ? $" STOCK IN : {product.ProductName} + {dto.Quantity} units"
+            : $" STOCK OUT : {product.ProductName} - {dto.Quantity} units";
+
+        var type = dto.TransactionType == "IN" ? "success": "warning";
+        await _notify.NotifyRole("Admin", msg, type,
+            User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "Unknown",
+            dto.TransactionType == "IN" ? "Stock IN" : "Stock OUT",
+            product.ProductName);
+        await _notify.NotifyRole("Manager", msg, type,
+        User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "Unknown", 
+            dto.TransactionType == "IN" ? "Stock IN" : "Stock OUT",
+            product.ProductName);
         return Ok("Stock transaction recorded successfully.");
     }
-
+ 
     [HttpGet("summary")]
     public async Task<IActionResult> GetStockSummary()
     {

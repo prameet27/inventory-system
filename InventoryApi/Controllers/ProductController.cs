@@ -1,11 +1,12 @@
 using InventoryApi.Data;
 using InventoryApi.DTOs;
 using InventoryApi.Models;
+using InventoryApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace InventoryApi.Controller;
+namespace InventoryApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -14,11 +15,13 @@ public class ProductController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly IWebHostEnvironment _env;
+    private readonly NotificationService _notify;
 
-    public ProductController(AppDbContext context, IWebHostEnvironment env)
+    public ProductController(AppDbContext context, IWebHostEnvironment env, NotificationService notify)
     {
         _context = context;
         _env = env;
+        _notify = notify;
     }
 
     private async Task<string> GenerateProductCode()
@@ -43,6 +46,7 @@ public class ProductController : ControllerBase
                 Unit = p.Unit,
                 Category = p.Category,
                 MRP = p.MRP,
+                ImagePath = p.ImagePath,
                 IsActive = p.IsActive,
                 CreatedAt = p.CreatedAt
             }).ToListAsync();
@@ -100,6 +104,10 @@ public class ProductController : ControllerBase
         _context.Products.Add(product);
         await _context.SaveChangesAsync();
 
+        await _notify.NotifyAll(
+            $"New Product Added: {product.ProductName} (code: {product.ProductCode})", "success", GetCurrentUsername(), "Added", product.ProductName
+        );
+
         return Ok(new ProductResponseDTO
         {
             Id = product.Id,
@@ -141,6 +149,11 @@ public class ProductController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+
+        await _notify.NotifyAll(
+            $"Product Updated: {product.ProductName}", "info", GetCurrentUsername(), "Updated", product.ProductName
+        );
+
         return Ok("Product updated successfully.");
     }
 
@@ -151,8 +164,24 @@ public class ProductController : ControllerBase
         var product = await _context.Products.FindAsync(id);
         if (product == null) return NotFound("Product not found.");
 
+        // Delete related stock ledgers first
+        var stockLedgers = await _context.StockLedgers
+            .Where(s => s.ProductId == id)
+            .ToListAsync();
+
+        _context.StockLedgers.RemoveRange(stockLedgers);
+
         _context.Products.Remove(product);
         await _context.SaveChangesAsync();
+
+        await _notify.NotifyAll(
+            $"🗑️ Product deleted: {product.ProductName}", "warning", GetCurrentUsername(), "Deleted", product.ProductName);
+
         return Ok("Product deleted successfully.");
+    }
+
+    private string GetCurrentUsername()
+    {
+        return User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "Unknown";
     }
 }

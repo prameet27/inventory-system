@@ -12,9 +12,12 @@ import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatListModule } from '@angular/material/list';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatBadgeModule } from '@angular/material/badge';
+import { MatMenuModule } from '@angular/material/menu';
 import { ProductService } from '../../core/services/product.service';
 import { AuthService } from '../../core/services/auth.service';
 import { Product } from '../../core/models/product.model';
+import { NotificationService, AppNotification } from '../../core/services/notification.service';
 
 @Component({
   selector: 'app-products',
@@ -23,7 +26,7 @@ import { Product } from '../../core/models/product.model';
     CommonModule, RouterModule, ReactiveFormsModule,
     MatCardModule, MatTableModule, MatButtonModule, MatIconModule,
     MatFormFieldModule, MatInputModule, MatToolbarModule,
-    MatSidenavModule, MatListModule, MatSnackBarModule
+    MatSidenavModule, MatListModule, MatSnackBarModule, MatBadgeModule, MatMenuModule
   ],
   template: `
     <mat-sidenav-container class="sidenav-container">
@@ -35,6 +38,7 @@ import { Product } from '../../core/models/product.model';
           <a mat-list-item routerLink="/stock"><mat-icon matListItemIcon>swap_vert</mat-icon><span matListItemTitle>Stock</span></a>
           <a mat-list-item routerLink="/users"><mat-icon matListItemIcon>people</mat-icon><span matListItemTitle>Users</span></a>
           <a mat-list-item routerLink="/reports"><mat-icon matListItemIcon>bar_chart</mat-icon><span matListItemTitle>Reports</span></a>
+          <a mat-list-item routerLink="/notifications"><mat-icon matListItemIcon>notifications</mat-icon><span matListItemTitle>Notifications</span></a>
         </mat-nav-list>
         <div class="sidenav-footer">
           <button mat-button (click)="logout()" class="logout-btn"><mat-icon>logout</mat-icon> Logout</button>
@@ -45,7 +49,42 @@ import { Product } from '../../core/models/product.model';
         <mat-toolbar color="primary">
           <span>Product Management</span>
           <span class="spacer"></span>
-          <button mat-raised-button (click)="showForm = !showForm">
+
+          <!-- Notification Bell -->
+          <button mat-icon-button [matMenuTriggerFor]="notifMenu" (click)="markAllRead()">
+            <mat-icon [matBadge]="unreadCount" matBadgeColor="warn"
+              [matBadgeHidden]="unreadCount === 0">notifications</mat-icon>
+          </button>
+          <mat-menu #notifMenu="matMenu">
+            <div class="notif-header">
+              <mat-icon>notifications</mat-icon> Notifications
+              <span class="notif-count" *ngIf="notifications.length > 0">{{ notifications.length }}</span>
+            </div>
+            <div *ngIf="notifications.length === 0" class="notif-empty">
+              <mat-icon>notifications_none</mat-icon><span>No notifications</span>
+            </div>
+            <div *ngFor="let n of notifications" class="notif-item" [class.unread]="!n.read">
+              <div class="notif-item-icon" [class]="'icon-' + n.type">
+                <mat-icon>{{ getIcon(n.type) }}</mat-icon>
+              </div>
+              <div class="notif-item-body">
+                <div class="notif-item-top">
+                  <span class="notif-action-chip" [class]="'chip-' + n.type">{{ n.action }}</span>
+                  <span class="notif-item-time">{{ n.timestamp | date:'shortTime' }}</span>
+                </div>
+                <div class="notif-item-name" *ngIf="n.itemName">{{ n.itemName }}</div>
+                <div class="notif-item-msg">{{ n.message }}</div>
+                <div class="notif-item-by" *ngIf="n.performedBy">
+                  <mat-icon>person</mat-icon><span>{{ n.performedBy }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="notif-footer" *ngIf="notifications.length > 0">
+              <a routerLink="/notifications" mat-button color="primary">View all</a>
+            </div>
+          </mat-menu>
+
+          <button mat-raised-button (click)="toggleForm()">
             <mat-icon>add</mat-icon> Add Product
           </button>
         </mat-toolbar>
@@ -163,6 +202,32 @@ import { Product } from '../../core/models/product.model';
     .table-card { border-radius: 12px; }
     .full-width { width: 100%; }
     .product-img { width: 48px; height: 48px; object-fit: cover; border-radius: 4px; }
+
+    /* Notification dropdown */
+    .notif-header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; font-weight: 600; font-size: 14px; border-bottom: 1px solid #eee; min-width: 320px; }
+    .notif-count { margin-left: auto; background: #1976d2; color: white; border-radius: 12px; padding: 1px 8px; font-size: 12px; }
+    .notif-empty { display: flex; align-items: center; gap: 8px; padding: 20px 16px; color: #9e9e9e; font-size: 13px; }
+    .notif-item { display: flex; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #f5f5f5; cursor: default; }
+    .notif-item.unread { background: #f8f9ff; }
+    .notif-item-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .notif-item-icon mat-icon { font-size: 18px; width: 18px; height: 18px; }
+    .icon-success { background: #e8f5e9; color: #388e3c; }
+    .icon-info    { background: #e3f2fd; color: #1976d2; }
+    .icon-warning { background: #fff3e0; color: #f57c00; }
+    .icon-error   { background: #ffebee; color: #d32f2f; }
+    .notif-item-body { flex: 1; overflow: hidden; }
+    .notif-item-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+    .notif-action-chip { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
+    .chip-success { background: #e8f5e9; color: #2e7d32; }
+    .chip-info    { background: #e3f2fd; color: #1565c0; }
+    .chip-warning { background: #fff3e0; color: #e65100; }
+    .chip-error   { background: #ffebee; color: #c62828; }
+    .notif-item-time { font-size: 11px; color: #bdbdbd; }
+    .notif-item-name { font-size: 13px; font-weight: 600; color: #212121; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .notif-item-msg  { font-size: 12px; color: #616161; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .notif-item-by   { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: #9e9e9e; margin-top: 3px; }
+    .notif-item-by mat-icon { font-size: 13px; width: 13px; height: 13px; }
+    .notif-footer { padding: 8px 16px; border-top: 1px solid #eee; text-align: center; }
   `]
 })
 export class ProductsComponent implements OnInit {
@@ -173,12 +238,15 @@ export class ProductsComponent implements OnInit {
   productForm: FormGroup;
   selectedImage: File | null = null;
   imagePreview: string | null = null;
+  notifications: AppNotification[] = [];
+  unreadCount = 0;
 
   constructor(
     private productService: ProductService,
     private authService: AuthService,
     private fb: FormBuilder,
     private snackBar: MatSnackBar,
+    private notificationService: NotificationService,
     private cdr: ChangeDetectorRef
   ) {
     this.productForm = this.fb.group({
@@ -187,14 +255,29 @@ export class ProductsComponent implements OnInit {
       unit: ['', Validators.required],
       mrp: ['', Validators.required]
     });
+
+    this.notificationService.notifications$.subscribe(n => {
+      this.notifications = n;
+      this.cdr.markForCheck();
+    });
+
+    this.notificationService.unreadCount$.subscribe(count => {
+      this.unreadCount = count;
+      this.cdr.markForCheck();
+    });
   }
 
   ngOnInit(): void { this.loadProducts(); }
 
+  toggleForm(): void {
+    this.showForm = !this.showForm;
+    if (!this.showForm) this.cancelForm();
+  }
+
   loadProducts(): void {
     this.productService.getProducts().subscribe(p => {
       this.products = p;
-      this.cdr.detectChanges(); 
+      this.cdr.detectChanges();
     });
   }
 
@@ -239,58 +322,44 @@ export class ProductsComponent implements OnInit {
     if (this.editingProduct) {
       formData.append('isActive', 'true');
       this.productService.updateProduct(this.editingProduct.id, formData).subscribe({
-        next: () => {
-          this.snackBar.open('Product updated!', 'Close', { duration: 3000 });
-          this.loadProducts(); 
-          this.cancelForm();
-      },
-      error: (err) => {
-        if (err.status === 200) {
-          this.snackBar.open('Product Updated !', 'close', { duration: 3000 });
-          this.loadProducts();
-          this.cancelForm();
-        } else {
-          this.snackBar.open('Error Updating Product', 'close', { duration: 3000 });
+        next: () => { this.snackBar.open('Product updated!', 'Close', { duration: 3000 }); this.loadProducts(); this.cancelForm(); },
+        error: (err) => {
+          if (err.status === 200) { this.snackBar.open('Product updated!', 'Close', { duration: 3000 }); this.loadProducts(); this.cancelForm(); }
+          else { this.snackBar.open('Error updating product', 'Close', { duration: 3000 }); }
         }
-      }
       });
     } else {
       this.productService.createProduct(formData).subscribe({
-        next: (res) => {
-        this.snackBar.open('Product created!', 'Close', { duration: 3000 });
-        this.loadProducts(); this.cancelForm();
-      },
-    error: (err) => {
-      if (err.status === 200) {
-        this.snackBar.open('Product created!', 'Close', { duration: 3000 });
-        this.loadProducts();
-        this.cancelForm();
-      } else {
-        this.snackBar.open('Error creating product', 'Close', { duration: 3000 });
-      }
-    }
-    });
+        next: () => { this.snackBar.open('Product created!', 'Close', { duration: 3000 }); this.loadProducts(); this.cancelForm(); },
+        error: (err) => {
+          if (err.status === 200) { this.snackBar.open('Product created!', 'Close', { duration: 3000 }); this.loadProducts(); this.cancelForm(); }
+          else { this.snackBar.open('Error creating product', 'Close', { duration: 3000 }); }
+        }
+      });
     }
   }
 
   deleteProduct(id: number): void {
     if (confirm('Are you sure you want to delete this product?')) {
       this.productService.deleteProduct(id).subscribe({
-        next: () => {
-        this.snackBar.open('Product deactivated!', 'Close', { duration: 3000 });
-        this.loadProducts();
-      },
-    error: (err) => {
-      if(err.status === 200){
-        this.snackBar.open("Product created!", "close", { duration: 3000 });
-        this.loadProducts();
-      } else {
-        this.snackBar.open('Error deleting product', 'Close', { duration: 3000 });
-      }
-    }
-    });
+        next: () => { this.snackBar.open('Product deactivated!', 'Close', { duration: 3000 }); this.loadProducts(); },
+        error: (err) => {
+          if (err.status === 200) { this.snackBar.open('Product deactivated!', 'Close', { duration: 3000 }); this.loadProducts(); }
+          else { this.snackBar.open('Error deleting product', 'Close', { duration: 3000 }); }
+        }
+      });
     }
   }
 
-  logout(): void { this.authService.logout(); }
+  getIcon(type: string): string {
+    switch (type) {
+      case 'success': return 'check_circle';
+      case 'warning': return 'warning';
+      case 'error':   return 'error';
+      default:        return 'info';
+    }
+  }
+
+  markAllRead(): void { this.notificationService.markAllRead(); }
+  logout(): void      { this.authService.logout(); }
 }
